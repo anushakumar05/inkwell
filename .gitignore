@@ -1,0 +1,30 @@
+# Environment / secrets
+.env
+.env.local
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# Node / frontend
+node_modules/
+dist/
+build/
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+
+# Eval outputs (keep the structure, but ignore raw timestamped files for now)
+backend/eval_results/*.json
+!backend/eval_results/.gitkeep

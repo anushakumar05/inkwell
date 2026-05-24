@@ -1,0 +1,91 @@
+"""
+Embedding service.
+
+Why these design choices:
+- text-embedding-3-small: 1536 dim, cheap, strong on semantic similarity for short text.
+- Qdrant over Pinecone/Weaviate: free self-hostable, has metadata filtering we need
+  for multi-tenancy (filter by user_id at query time, never cross-leak entries between users).
+- Cosine distance: standard for semantic similarity with normalized embeddings.
+"""
+import os
+from openai import AsyncOpenAI
+from qdrant_client import AsyncQdrantClient
+from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
+
+EMBEDDING_MODEL = "text-embedding-3-small"
+EMBEDDING_DIM = 1536
+COLLECTION = "journal_entries"
+
+openai = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
+qdrant = AsyncQdrantClient(url=os.environ.get("QDRANT_URL", "http://localhost:6333"))
+
+
+async def ensure_collection():
+    """Idempotent — call on app startup."""
+    collections = await qdrant.get_collections()
+    if not any(c.name == COLLECTION for c in collections.collections):
+        await qdrant.create_collection(
+            collection_name=COLLECTION,
+            vectors_config=VectorParams(size=EMBEDDING_DIM, distance=Distance.COSINE),
+        )
+
+
+async def embed_text(text: str) -> list[float]:
+    """Return a single embedding vector."""
+    response = await openai.embeddings.create(
+        model=EMBEDDING_MODEL,
+        input=text,
+    )
+    return response.data[0].embedding
+
+
+async def index_entry(entry_id: str, user_id: str, content: str, created_at_iso: str):
+    """Embed + upsert into Qdrant. Called as a background task on entry create/update."""
+    vector = await embed_text(content)
+    await qdrant.upsert(
+        collection_name=COLLECTION,
+        points=[
+            PointStruct(
+                id=entry_id,
+                vector=vector,
+                payload={
+                    "user_id": user_id,
+                    "entry_id": entry_id,
+                    "created_at": created_at_iso,
+                    # Store a truncated preview so we don't have to round-trip to Mongo
+                    # just to render search results.
+                    "preview": content[:200],
+                },
+            )
+        ],
+    )
+
+
+async def search(user_id: str, query: str, limit: int = 5) -> list[dict]:
+    """Semantic search scoped to a single user.
+
+    The user_id filter is critical for security: we run on a single shared collection,
+    so the filter ensures users only see their own entries.
+    """
+    query_vector = await embed_text(query)
+    results = await qdrant.search(
+        collection_name=COLLECTION,
+        query_vector=query_vector,
+        query_filter=Filter(
+            must=[FieldCondition(key="user_id", match=MatchValue(value=user_id))]
+        ),
+        limit=limit,
+    )
+    return [
+        {
+            "entry_id": r.payload["entry_id"],
+            "preview": r.payload["preview"],
+            "created_at": r.payload["created_at"],
+            "score": r.score,  # cosine similarity, higher = more relevant
+        }
+        for r in results
+    ]
+
+
+async def delete_entry(entry_id: str):
+    await qdrant.delete(collection_name=COLLECTION, points_selector=[entry_id])
