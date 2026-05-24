@@ -7,11 +7,12 @@ manually via the /docs page.
 """
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel, Field
 from beanie import PydanticObjectId
 
 from models.entry import Entry
+from auth.firebase import require_user
 
 router = APIRouter(prefix="/entries", tags=["entries"])
 
@@ -55,7 +56,7 @@ class EntryResponse(BaseModel):
 @router.post("", response_model=EntryResponse, status_code=201)
 async def create_entry(
     payload: EntryCreate,
-    user_id: str = Query(..., description="TEMPORARY — will come from auth token in Day 3"),
+    user_id: str = Depends(require_user)
 ):
     entry = Entry(
         user_id=user_id,
@@ -68,7 +69,7 @@ async def create_entry(
 
 @router.get("", response_model=list[EntryResponse])
 async def list_entries(
-    user_id: str = Query(...),
+    user_id: str = Depends(require_user),
     limit: int = Query(50, ge=1, le=200),
     skip: int = Query(0, ge=0),
 ):
@@ -83,7 +84,7 @@ async def list_entries(
 
 
 @router.get("/{entry_id}", response_model=EntryResponse)
-async def get_entry(entry_id: PydanticObjectId, user_id: str = Query(...)):
+async def get_entry(entry_id: PydanticObjectId, user_id: str = Depends(require_user)):
     entry = await Entry.get(entry_id)
     if not entry or entry.user_id != user_id:
         raise HTTPException(404, "Entry not found")
@@ -94,7 +95,7 @@ async def get_entry(entry_id: PydanticObjectId, user_id: str = Query(...)):
 async def update_entry(
     entry_id: PydanticObjectId,
     payload: EntryUpdate,
-    user_id: str = Query(...),
+    user_id: str = Depends(require_user),
 ):
     entry = await Entry.get(entry_id)
     if not entry or entry.user_id != user_id:
@@ -108,7 +109,7 @@ async def update_entry(
 
 
 @router.delete("/{entry_id}", status_code=204)
-async def delete_entry(entry_id: PydanticObjectId, user_id: str = Query(...)):
+async def delete_entry(entry_id: PydanticObjectId, user_id: str = Depends(require_user)):
     entry = await Entry.get(entry_id)
     if not entry or entry.user_id != user_id:
         raise HTTPException(404, "Entry not found")
