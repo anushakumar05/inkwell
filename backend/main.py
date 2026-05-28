@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from services.embeddings import ensure_collection
 from beanie import init_beanie
 from dotenv import load_dotenv
 import os
@@ -20,7 +21,6 @@ from api.entries import router as entries_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup + shutdown logic. Runs once when the server boots."""
     # --- Startup ---
     client = AsyncIOMotorClient(os.environ["MONGO_URL"])
     await init_beanie(
@@ -28,6 +28,10 @@ async def lifespan(app: FastAPI):
         document_models=[Entry],
     )
     print(f"✅ Connected to MongoDB: {os.environ['DB_NAME']}")
+
+    await ensure_collection()
+    print("✅ Qdrant collection ready")
+
     yield
     # --- Shutdown ---
     client.close()

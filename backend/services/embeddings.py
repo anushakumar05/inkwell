@@ -8,13 +8,28 @@ Why these design choices:
 - Cosine distance: standard for semantic similarity with normalized embeddings.
 """
 import os
+import uuid
+from dotenv import load_dotenv
 from openai import AsyncOpenAI
+
+load_dotenv()
+
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
 
 EMBEDDING_MODEL = "text-embedding-3-small"
 EMBEDDING_DIM = 1536
 COLLECTION = "journal_entries"
+
+# Qdrant point IDs must be an int or a UUID. MongoDB ObjectIds are neither, so we
+# deterministically derive a UUID from the entry's string id. "Deterministic" means
+# the same entry_id always produces the same UUID — so updates overwrite the right
+# point and deletes remove the right one, instead of creating duplicates.
+_QDRANT_NAMESPACE = uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")  # any fixed UUID
+
+
+def to_point_id(entry_id: str) -> str:
+    return str(uuid.uuid5(_QDRANT_NAMESPACE, entry_id))
 
 openai = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
 qdrant = AsyncQdrantClient(url=os.environ.get("QDRANT_URL", "http://localhost:6333"))
@@ -46,7 +61,7 @@ async def index_entry(entry_id: str, user_id: str, content: str, created_at_iso:
         collection_name=COLLECTION,
         points=[
             PointStruct(
-                id=entry_id,
+                id=to_point_id(entry_id),
                 vector=vector,
                 payload={
                     "user_id": user_id,
@@ -88,4 +103,4 @@ async def search(user_id: str, query: str, limit: int = 5) -> list[dict]:
 
 
 async def delete_entry(entry_id: str):
-    await qdrant.delete(collection_name=COLLECTION, points_selector=[entry_id])
+    await qdrant.delete(collection_name=COLLECTION, points_selector=[to_point_id(entry_id)])

@@ -7,9 +7,10 @@ manually via the /docs page.
 """
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends, BackgroundTasks
 from pydantic import BaseModel, Field
 from beanie import PydanticObjectId
+from services import embeddings
 
 from models.entry import Entry
 from auth.firebase import require_user
@@ -50,13 +51,19 @@ class EntryResponse(BaseModel):
             mood=entry.mood.model_dump() if entry.mood else None,
         )
 
+class SearchResult(BaseModel):
+    entry_id: str
+    preview: str
+    created_at: str
+    score: float
 
 # --- Endpoints ---
 
 @router.post("", response_model=EntryResponse, status_code=201)
 async def create_entry(
     payload: EntryCreate,
-    user_id: str = Depends(require_user)
+    background: BackgroundTasks,
+    user_id: str = Depends(require_user),
 ):
     entry = Entry(
         user_id=user_id,
@@ -64,6 +71,15 @@ async def create_entry(
         word_count=len(payload.content.split()),
     )
     await entry.insert()
+
+    # Embed + index in the background so the user gets an instant response.
+    background.add_task(
+        embeddings.index_entry,
+        entry_id=str(entry.id),
+        user_id=user_id,
+        content=entry.content,
+        created_at_iso=entry.created_at.isoformat(),
+    )
     return EntryResponse.from_doc(entry)
 
 
@@ -95,6 +111,7 @@ async def get_entry(entry_id: PydanticObjectId, user_id: str = Depends(require_u
 async def update_entry(
     entry_id: PydanticObjectId,
     payload: EntryUpdate,
+    background: BackgroundTasks,
     user_id: str = Depends(require_user),
 ):
     entry = await Entry.get(entry_id)
@@ -105,12 +122,36 @@ async def update_entry(
     entry.word_count = len(payload.content.split())
     entry.updated_at = datetime.utcnow()
     await entry.save()
+
+    # Re-embed since the content changed. Because to_point_id is deterministic,
+    # this overwrites the existing vector rather than creating a duplicate.
+    background.add_task(
+        embeddings.index_entry,
+        entry_id=str(entry.id),
+        user_id=user_id,
+        content=entry.content,
+        created_at_iso=entry.created_at.isoformat(),
+    )
     return EntryResponse.from_doc(entry)
 
 
 @router.delete("/{entry_id}", status_code=204)
-async def delete_entry(entry_id: PydanticObjectId, user_id: str = Depends(require_user)):
+async def delete_entry(
+    entry_id: PydanticObjectId,
+    background: BackgroundTasks,
+    user_id: str = Depends(require_user),
+):
     entry = await Entry.get(entry_id)
     if not entry or entry.user_id != user_id:
         raise HTTPException(404, "Entry not found")
     await entry.delete()
+    background.add_task(embeddings.delete_entry, entry_id=str(entry_id))
+
+@router.get("/search/semantic", response_model=list[SearchResult])
+async def semantic_search(
+    q: str = Query(..., min_length=1, description="Natural language search query"),
+    limit: int = Query(5, ge=1, le=20),
+    user_id: str = Depends(require_user),
+):
+    results = await embeddings.search(user_id=user_id, query=q, limit=limit)
+    return results
