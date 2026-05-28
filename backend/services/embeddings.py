@@ -55,25 +55,36 @@ async def embed_text(text: str) -> list[float]:
 
 
 async def index_entry(entry_id: str, user_id: str, content: str, created_at_iso: str):
-    """Embed + upsert into Qdrant. Called as a background task on entry create/update."""
-    vector = await embed_text(content)
-    await qdrant.upsert(
-        collection_name=COLLECTION,
-        points=[
-            PointStruct(
-                id=to_point_id(entry_id),
-                vector=vector,
-                payload={
-                    "user_id": user_id,
-                    "entry_id": entry_id,
-                    "created_at": created_at_iso,
-                    # Store a truncated preview so we don't have to round-trip to Mongo
-                    # just to render search results.
-                    "preview": content[:200],
-                },
-            )
-        ],
-    )
+    """Embed + upsert into Qdrant. Updates the entry's embedding_status on success/failure."""
+    from models.entry import Entry  # local import avoids a circular import at module load
+    from beanie import PydanticObjectId
+
+    try:
+        vector = await embed_text(content)
+        await qdrant.upsert(
+            collection_name=COLLECTION,
+            points=[
+                PointStruct(
+                    id=to_point_id(entry_id),
+                    vector=vector,
+                    payload={
+                        "user_id": user_id,
+                        "entry_id": entry_id,
+                        "created_at": created_at_iso,
+                        "preview": content[:200],
+                    },
+                )
+            ],
+        )
+        status = "indexed"
+    except Exception as e:
+        print(f"⚠️  Failed to index entry {entry_id}: {e}")
+        status = "failed"
+
+    entry = await Entry.get(PydanticObjectId(entry_id))
+    if entry:
+        entry.embedding_status = status
+        await entry.save()
 
 
 async def search(user_id: str, query: str, limit: int = 5) -> list[dict]:
