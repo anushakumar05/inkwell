@@ -1,3 +1,6 @@
+import MoodChart from "./MoodChart";
+import ThemePills from "./ThemePills";
+
 import { useState, useEffect } from "react";
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
 import MDEditor from "@uiw/react-md-editor";
@@ -224,6 +227,12 @@ function JournalScreen({ user }) {
         </aside>
 
         <main className="col-span-2 bg-white p-6 rounded border">
+
+          <div className="mb-6 space-y-3">
+            <ThemePills />
+            <MoodChart />
+          </div>
+
           <div data-color-mode="light">
             <MDEditor value={content} onChange={setContent} height={400} preview="edit" />
           </div>
