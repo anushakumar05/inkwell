@@ -17,6 +17,7 @@ load_dotenv()
 
 from models.entry import Entry  # noqa: E402
 from api.entries import router as entries_router
+from api.chat import router as chat_router
 
 
 @asynccontextmanager
@@ -55,6 +56,7 @@ app.add_middleware(
 )
 
 app.include_router(entries_router)
+app.include_router(chat_router)
 
 @app.get("/")
 async def root():
