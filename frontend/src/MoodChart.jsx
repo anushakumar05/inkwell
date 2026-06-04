@@ -1,7 +1,5 @@
 import { useState, useEffect } from "react";
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
-} from "recharts";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import api from "./lib/api";
 
 export default function MoodChart() {
@@ -12,7 +10,6 @@ export default function MoodChart() {
     async function load() {
       try {
         const { data } = await api.get("/entries/trends/mood", { params: { days: 60 } });
-        // Format dates for display and keep the raw scores.
         const formatted = data.map((p) => ({
           date: new Date(p.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
           valence: p.valence,
@@ -20,43 +17,41 @@ export default function MoodChart() {
           emotion: p.dominant_emotion,
         }));
         setData(formatted);
-      } finally {
-        setLoading(false);
-      }
+      } finally { setLoading(false); }
     }
     load();
   }, []);
 
-  if (loading) return <p className="text-sm text-slate-400">Loading mood trends...</p>;
+  if (loading) return <p className="text-xs text-ink-500 italic font-serif">Reading the lines…</p>;
   if (data.length === 0) {
-    return <p className="text-sm text-slate-400">No mood data yet. Write a few entries!</p>;
+    return <p className="text-xs text-ink-500 italic font-serif">Write a few entries to see your mood arc.</p>;
   }
 
   return (
-    <div className="bg-white p-4 rounded border">
-      <h2 className="text-sm font-medium mb-3">Mood over time</h2>
-      <ResponsiveContainer width="100%" height={260}>
-        <LineChart data={data} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-          <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-          <YAxis domain={[-1, 1]} tick={{ fontSize: 11 }} />
+    <div>
+      <div className="flex items-baseline justify-between mb-2">
+        <h3 className="font-serif text-base text-ink-900">Mood over time</h3>
+        <div className="flex gap-3 text-[10px] text-ink-500">
+          <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-accent inline-block" />Valence</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-ink-500 inline-block border-t border-dashed border-ink-500" />Energy</span>
+        </div>
+      </div>
+      <ResponsiveContainer width="100%" height={180}>
+        <LineChart data={data} margin={{ top: 8, right: 8, left: -25, bottom: 0 }}>
+          <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#857d74" }} stroke="#e8dab8" />
+          <YAxis domain={[-1, 1]} tick={{ fontSize: 10, fill: "#857d74" }} stroke="#e8dab8" />
           <Tooltip
-            contentStyle={{ fontSize: 12, borderRadius: 8 }}
-            formatter={(value, name) => [value.toFixed(2), name]}
+            contentStyle={{ fontSize: 12, borderRadius: 6, background: "#fdfbf6", border: "1px solid #e8dab8" }}
+            formatter={(value) => value.toFixed(2)}
             labelFormatter={(label, payload) =>
-                payload && payload[0] ? `${label} — ${payload[0].payload.emotion}` : label
+              payload && payload[0] ? `${label} — ${payload[0].payload.emotion}` : label
             }
           />
-          {/* Zero line so positive/negative is visually obvious */}
-          <ReferenceLine y={0} stroke="#cbd5e1" />
-          <Line type="monotone" dataKey="valence" stroke="#0f766e" strokeWidth={2} dot={{ r: 3 }} name="Valence" />
-          <Line type="monotone" dataKey="energy" stroke="#7c3aed" strokeWidth={2} dot={{ r: 3 }} strokeDasharray="4 2" name="Energy" />
+          <ReferenceLine y={0} stroke="#e8dab8" />
+          <Line type="monotone" dataKey="valence" stroke="#9e3b1a" strokeWidth={2} dot={{ r: 2.5, fill: "#9e3b1a" }} />
+          <Line type="monotone" dataKey="energy" stroke="#857d74" strokeWidth={1.5} strokeDasharray="4 3" dot={{ r: 2, fill: "#857d74" }} />
         </LineChart>
       </ResponsiveContainer>
-      <div className="flex gap-4 mt-2 text-xs text-slate-500">
-        <span><span className="inline-block w-3 h-0.5 bg-teal-700 align-middle mr-1"></span>Valence (positive/negative)</span>
-        <span><span className="inline-block w-3 h-0.5 bg-violet-600 align-middle mr-1"></span>Energy (calm/activated)</span>
-      </div>
     </div>
   );
 }
