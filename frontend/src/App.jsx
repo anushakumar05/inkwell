@@ -5,6 +5,7 @@ import { auth } from "./lib/firebase";
 import api from "./lib/api";
 import ChatPanel from "./ChatPanel";
 import InsightsPage from "./InsightsPage";
+import EvalsPage from "./EvalsPage";
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -176,6 +177,7 @@ function JournalScreen({ user }) {
               <TabButton id="write" label="Write" />
               <TabButton id="insights" label="Insights" />
               <TabButton id="chat" label="Chat" />
+              <TabButton id="evals" label="Evals" />
             </nav>
           </div>
           <div className="flex items-center gap-4 text-sm">
@@ -323,6 +325,9 @@ function JournalScreen({ user }) {
 
       {/* INSIGHTS tab */}
       {tab === "insights" && <InsightsPage />}
+
+      {/* EVALS tab */}
+      {tab === "evals" && <EvalsPage />}
 
       {/* CHAT tab */}
       {tab === "chat" && (

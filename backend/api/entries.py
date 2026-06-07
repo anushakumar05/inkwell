@@ -225,3 +225,64 @@ async def theme_frequency(user_id: str = Depends(require_user)):
     # Return sorted, most common first
     ranked = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
     return [{"theme": t, "count": c} for t, c in ranked]
+
+@router.get("/trends/frequency")
+async def entry_frequency(
+    days: int = Query(90, ge=1, le=365),
+    user_id: str = Depends(require_user),
+):
+    """Returns a count of entries per day for the last N days, for a calendar heatmap."""
+    from datetime import datetime, timedelta
+    cutoff = datetime.utcnow() - timedelta(days=days)
+
+    entries = await Entry.find(
+        Entry.user_id == user_id,
+        Entry.created_at >= cutoff,
+    ).to_list()
+
+    counts = {}
+    for e in entries:
+        day = e.created_at.date().isoformat()
+        counts[day] = counts.get(day, 0) + 1
+
+    return [{"date": d, "count": c} for d, c in sorted(counts.items())]
+
+@router.get("/trends/evals")
+async def eval_trends(user_id: str = Depends(require_user)):
+    """Returns recent eval scores for charting + a summary."""
+    from services.evaluation import EvalRun
+    from statistics import mean
+
+    runs = await EvalRun.find(EvalRun.user_id == user_id).sort(+EvalRun.created_at).to_list()
+
+    if not runs:
+        return {
+            "total_evals": 0,
+            "avg_faithfulness": None,
+            "avg_answer_relevance": None,
+            "avg_context_relevance": None,
+            "live_count": 0,
+            "test_set_count": 0,
+            "recent": [],
+        }
+
+    return {
+        "total_evals": len(runs),
+        "avg_faithfulness": mean([r.faithfulness for r in runs]),
+        "avg_answer_relevance": mean([r.answer_relevance for r in runs]),
+        "avg_context_relevance": mean([r.context_relevance for r in runs]),
+        "live_count": sum(1 for r in runs if not r.is_test_set),
+        "test_set_count": sum(1 for r in runs if r.is_test_set),
+        "recent": [
+            {
+                "created_at": r.created_at.isoformat(),
+                "question": r.question[:120],
+                "faithfulness": r.faithfulness,
+                "answer_relevance": r.answer_relevance,
+                "context_relevance": r.context_relevance,
+                "notes": r.notes,
+                "is_test_set": r.is_test_set,
+            }
+            for r in runs[-30:]  # last 30
+        ],
+    }

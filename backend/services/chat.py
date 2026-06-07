@@ -10,12 +10,12 @@ The flow:
 
 Critical design decisions:
 - Claude Sonnet for generation: strong instruction-following on grounding/citation
-  behavior, which is what we'll measure in Week 5.
+  behavior, which is measured by the eval pipeline.
 - Strict system prompt: refusing ("I don't have entries about that") is the CORRECT
   behavior when retrieval comes up empty or off-topic. Hallucination is the failure
   mode we're explicitly designing against.
-- Returning the retrieval payload alongside the answer lets the eval pipeline next
-  week score faithfulness without re-running retrieval.
+- Returning the retrieval payload alongside the answer lets the eval pipeline
+  score faithfulness without re-running retrieval.
 """
 import os
 from typing import AsyncIterator
@@ -50,7 +50,6 @@ def format_context(retrieved: list[dict]) -> tuple[str, list[dict]]:
     citations = []
     for i, hit in enumerate(retrieved, start=1):
         cid = f"E{i}"
-        # Truncated preview was stored in the vector payload; this avoids a round-trip to Mongo.
         date_str = hit["created_at"][:10]
         lines.append(f"[{cid}] (written {date_str}):\n{hit['preview']}")
         citations.append({
@@ -64,7 +63,7 @@ def format_context(retrieved: list[dict]) -> tuple[str, list[dict]]:
 async def chat(user_id: str, question: str) -> dict:
     """Non-streaming variant — returns the full answer + retrieval metadata.
 
-    Used by the eval pipeline in Week 5.
+    Used by the eval pipeline.
     """
     retrieved = await search(user_id=user_id, query=question, limit=5)
 
@@ -98,7 +97,7 @@ async def chat(user_id: str, question: str) -> dict:
 async def chat_stream(user_id: str, question: str) -> AsyncIterator[dict]:
     """Streaming variant for the UI.
 
-    Yields a series of dicts:
+    Yields typed events:
       - First yield: {"type": "citations", "data": [...]}  — so the UI can render the
         citation badges before tokens start arriving.
       - Then many yields: {"type": "text", "data": "..."} — token chunks.
@@ -111,7 +110,12 @@ async def chat_stream(user_id: str, question: str) -> AsyncIterator[dict]:
         yield {"type": "text", "data": "I don't see any entries that relate to that question yet."}
         return
 
-    context, citations = format_context(retrieved)
+    context, _ = format_context(retrieved)
+    citations = [
+        {"id": f"E{i+1}", "entry_id": hit["entry_id"], "created_at": hit["created_at"]}
+        for i, hit in enumerate(retrieved)
+    ]
+
     # Send citations first so the UI can render badges before the answer streams.
     yield {"type": "citations", "data": citations}
 
