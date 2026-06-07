@@ -1,107 +1,144 @@
 """
-Offline test set runner.
+Offline evaluation runner.
 
-Run this from the command line whenever you make a change to the RAG pipeline
-(new model, new prompt, new chunking, etc.). It executes a fixed set of questions
-against a fixed set of seed entries and reports aggregate metrics.
+Run after any change to:
+  - The chat system prompt
+  - The retrieval pipeline (chunk size, embeddings model, hybrid search, etc.)
+  - The generation model
 
 Usage:
     python -m scripts.run_eval_suite
 
 Output:
-    - Console: summary table with averages and per-question scores
-    - File:    eval_results/{timestamp}.json with full results
-
-THIS IS THE FILE THAT GETS YOU HIRED. Show this in the README. Show the metrics
-over time as you iterate. "v1: 72% faithfulness. v3 (added query rewriting): 87%"
-is exactly the kind of bullet that makes an interviewer lean forward.
+    - Console: summary table + per-question scores
+    - File:    backend/eval_results/{ISO timestamp}.json
+                Commit these to track scores over time.
 """
 import asyncio
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
 from statistics import mean
 
+from motor.motor_asyncio import AsyncIOMotorClient
+from beanie import init_beanie
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+from models.entry import Entry
 from services.chat import chat
-from services.evaluation import evaluate_response
-
-# A test set is a list of (question, ideal_behavior) pairs.
-# The ideal_behavior isn't used by the judge directly — it's for YOU to read
-# when you're debugging why a question scored low.
-TEST_SET = [
-    {
-        "question": "What have I been struggling with lately?",
-        "ideal_behavior": "Should synthesize themes across recent negative-valence entries.",
-    },
-    {
-        "question": "When was the last time I felt really happy?",
-        "ideal_behavior": "Should find a positive-valence entry and reference its date.",
-    },
-    {
-        "question": "Do I write more about work or relationships?",
-        "ideal_behavior": "Should compare theme frequencies. If insufficient data, say so.",
-    },
-    {
-        "question": "What's the meaning of life?",
-        "ideal_behavior": "Should refuse — this isn't grounded in journal entries. Tests guardrails.",
-    },
-    {
-        "question": "Did I mention my friend Maya recently?",
-        "ideal_behavior": "Tests proper-noun retrieval. Should find entries mentioning Maya, or honestly say no.",
-    },
-    # ... add 15+ more, covering: positive questions, retrieval-edge-case questions,
-    # questions you EXPECT to fail (the refusal cases), questions about specific dates,
-    # questions about themes.
-]
-
-TEST_USER_ID = "eval_seed_user"  # A user pre-populated with seed entries
+from services.evaluation import EvalRun, score_and_store
+from scripts.eval_test_set import TEST_SET
 
 
-async def run_one(item: dict) -> dict:
+# The eval suite runs against a specific user's corpus. We pick the same user
+# every time so scores are comparable across runs.
+def get_test_user_id() -> str:
+    uid = os.environ.get("EVAL_USER_ID")
+    if not uid:
+        print("ERROR: set EVAL_USER_ID env var to your Firebase UID before running.")
+        print("  export EVAL_USER_ID=your-uid-here")
+        sys.exit(1)
+    return uid
+
+
+async def run_one(user_id: str, item: dict) -> dict:
+    """Run a single question end-to-end and return its scores."""
     question = item["question"]
-    chat_result = await chat(user_id=TEST_USER_ID, question=question)
-    scores = await evaluate_response(
+    chat_result = await chat(user_id=user_id, question=question)
+
+    scores = await score_and_store(
+        user_id=user_id,
         question=question,
-        answer=chat_result["answer"],
-        retrieved=chat_result["retrieved"],
+        chat_result=chat_result,
+        is_test_set=True,
     )
+
+    if scores is None:
+        return {
+            "id": item["id"],
+            "category": item["category"],
+            "question": question,
+            "answer": chat_result["answer"][:200],
+            "num_retrieved": len(chat_result["retrieved"]),
+            "error": "evaluation failed",
+        }
+
     return {
+        "id": item["id"],
+        "category": item["category"],
         "question": question,
-        "ideal_behavior": item["ideal_behavior"],
-        "answer": chat_result["answer"],
-        "scores": scores.model_dump(),
+        "answer": chat_result["answer"][:200],
         "num_retrieved": len(chat_result["retrieved"]),
+        "faithfulness": scores.faithfulness,
+        "answer_relevance": scores.answer_relevance,
+        "context_relevance": scores.context_relevance,
+        "notes": scores.notes,
     }
 
 
 async def main():
-    print(f"Running eval suite with {len(TEST_SET)} questions...")
-    results = await asyncio.gather(*(run_one(item) for item in TEST_SET))
+    user_id = get_test_user_id()
 
-    faithfulness_scores = [r["scores"]["faithfulness"] for r in results]
-    relevance_scores = [r["scores"]["answer_relevance"] for r in results]
-    context_scores = [r["scores"]["context_relevance"] for r in results]
+    client = AsyncIOMotorClient(os.environ["MONGO_URL"])
+    await init_beanie(
+        database=client[os.environ["DB_NAME"]],
+        document_models=[Entry, EvalRun],
+    )
 
+    cases = [c for c in TEST_SET if not c.get("skip")]
+    print(f"Running eval suite — {len(cases)} test cases\n")
+
+    # Run cases in parallel for speed (eval calls are I/O-bound).
+    # Limit concurrency to avoid Anthropic rate limits.
+    sem = asyncio.Semaphore(3)
+    async def bounded(item):
+        async with sem:
+            result = await run_one(user_id, item)
+            mark = "✓" if "faithfulness" in result else "✗"
+            f = result.get("faithfulness")
+            print(f"  {mark} {item['id']}  f={f:.2f}" if f is not None else f"  {mark} {item['id']}  (failed)")
+            return result
+
+    results = await asyncio.gather(*(bounded(c) for c in cases))
+
+    # Aggregate
+    successful = [r for r in results if "faithfulness" in r]
     summary = {
         "timestamp": datetime.utcnow().isoformat(),
-        "n_questions": len(TEST_SET),
-        "avg_faithfulness": mean(faithfulness_scores),
-        "avg_answer_relevance": mean(relevance_scores),
-        "avg_context_relevance": mean(context_scores),
+        "n_questions": len(cases),
+        "n_successful": len(successful),
+        "avg_faithfulness": mean([r["faithfulness"] for r in successful]) if successful else 0,
+        "avg_answer_relevance": mean([r["answer_relevance"] for r in successful]) if successful else 0,
+        "avg_context_relevance": mean([r["context_relevance"] for r in successful]) if successful else 0,
         "results": results,
     }
 
+    # Print summary
     print(f"\n{'='*60}")
-    print(f"Faithfulness:      {summary['avg_faithfulness']:.3f}")
-    print(f"Answer relevance:  {summary['avg_answer_relevance']:.3f}")
-    print(f"Context relevance: {summary['avg_context_relevance']:.3f}")
+    print(f"  {len(successful)}/{len(cases)} cases scored successfully")
+    print(f"  Faithfulness:      {summary['avg_faithfulness']:.3f}")
+    print(f"  Answer relevance:  {summary['avg_answer_relevance']:.3f}")
+    print(f"  Context relevance: {summary['avg_context_relevance']:.3f}")
     print(f"{'='*60}\n")
 
+    # Per-category breakdown — useful for spotting weak areas
+    by_cat = {}
+    for r in successful:
+        by_cat.setdefault(r["category"], []).append(r["faithfulness"])
+    print("By category (faithfulness):")
+    for cat, vals in sorted(by_cat.items()):
+        print(f"  {cat:20s} {mean(vals):.3f}  (n={len(vals)})")
+
+    # Save to disk
     out_dir = Path("eval_results")
     out_dir.mkdir(exist_ok=True)
-    out_file = out_dir / f"{summary['timestamp']}.json"
-    out_file.write_text(json.dumps(summary, indent=2))
-    print(f"Wrote {out_file}")
+    fname = out_dir / f"{summary['timestamp'].replace(':', '-')}.json"
+    fname.write_text(json.dumps(summary, indent=2))
+    print(f"\nFull report: {fname}")
 
 
 if __name__ == "__main__":

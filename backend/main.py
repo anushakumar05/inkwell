@@ -10,12 +10,14 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from services.embeddings import ensure_collection
 from beanie import init_beanie
 from dotenv import load_dotenv
+
 import os
 
 # Load environment variables from .env BEFORE importing anything that uses them
 load_dotenv()
 
 from models.entry import Entry  # noqa: E402
+from services.evaluation import EvalRun  # add to your imports near Entry
 from api.entries import router as entries_router
 from api.chat import router as chat_router
 
@@ -26,7 +28,7 @@ async def lifespan(app: FastAPI):
     client = AsyncIOMotorClient(os.environ["MONGO_URL"])
     await init_beanie(
         database=client[os.environ["DB_NAME"]],
-        document_models=[Entry],
+        document_models=[Entry, EvalRun],
     )
     print(f"✅ Connected to MongoDB: {os.environ['DB_NAME']}")
 
