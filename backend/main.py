@@ -47,11 +47,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+allowed_origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+
 # Allow the React frontend (running on localhost:5173) to call this API.
 # In production we'll lock this down to the real frontend domain.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

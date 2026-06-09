@@ -100,7 +100,8 @@ async def evaluate_response(
     """Score a single RAG response. Returns validated EvalScores or raises."""
     if retrieved:
         context_block = "\n\n".join(
-            f"[E{i+1}] {hit['preview']}" for i, hit in enumerate(retrieved)
+            f"[E{i+1}] (written {hit['created_at'][:10]}):\n{hit['preview']}"
+            for i, hit in enumerate(retrieved)
         )
     else:
         context_block = "(no entries were retrieved)"

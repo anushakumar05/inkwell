@@ -1,35 +1,41 @@
-"""
-Firebase auth dependency.
-
-Usage in an endpoint:
-    @router.get("/something")
-    async def something(user_id: str = Depends(require_user)):
-        ...
-
-The dependency:
-  1. Extracts the Bearer token from the Authorization header.
-  2. Verifies it with Firebase.
-  3. Returns the Firebase UID (a stable string ID for this user).
-  4. Raises 401 if anything is wrong.
-"""
 import os
+import base64
+import json
+import tempfile
 import firebase_admin
 from firebase_admin import auth as fb_auth, credentials
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-# Initialize the Firebase Admin SDK once at module load.
-if not firebase_admin._apps:
-    cred = credentials.Certificate(os.environ["FIREBASE_SERVICE_ACCOUNT_PATH"])
+
+def _init_firebase():
+    """Initialize Firebase from either a file path (local) or a base64 env var (prod)."""
+    if firebase_admin._apps:
+        return  # already initialized
+
+    b64 = os.environ.get("FIREBASE_SERVICE_ACCOUNT_B64")
+    if b64:
+        # Production: decode base64, write to a temp file, point Firebase at it
+        decoded = base64.b64decode(b64).decode("utf-8")
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+        tmp.write(decoded)
+        tmp.close()
+        cred = credentials.Certificate(tmp.name)
+    else:
+        # Local dev: read from the file path in .env
+        path = os.environ["FIREBASE_SERVICE_ACCOUNT_PATH"]
+        cred = credentials.Certificate(path)
+
     firebase_admin.initialize_app(cred)
 
+
+_init_firebase()
 bearer = HTTPBearer(auto_error=False)
 
 
 async def require_user(
     creds: HTTPAuthorizationCredentials | None = Depends(bearer),
 ) -> str:
-    """Returns the Firebase UID of the authenticated user, or raises 401."""
     if creds is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
