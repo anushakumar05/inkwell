@@ -160,3 +160,16 @@ resource "aws_iam_instance_profile" "ec2" {
   name = "${var.project_name}-${var.environment}-ec2-profile"
   role = aws_iam_role.ec2.name
 }
+
+# ---------------------------------------------------------------------------
+# Elastic IP — static public IP that survives stop/start cycles.
+# Free while attached to a running instance.
+# ---------------------------------------------------------------------------
+resource "aws_eip" "this" {
+  domain   = "vpc"
+  instance = aws_instance.this.id
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-eip"
+  }
+}

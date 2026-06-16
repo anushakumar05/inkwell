@@ -1,16 +1,16 @@
 output "instance_public_ip" {
-  description = "Public IP of the EC2 instance"
-  value       = aws_instance.this.public_ip
+  description = "Stable Elastic IP attached to the EC2"
+  value       = aws_eip.this.public_ip
 }
 
 output "ssh_command" {
   description = "Copy-pasteable command to SSH into the instance"
-  value       = "ssh -i ~/.ssh/inkwell-tf-key ec2-user@${aws_instance.this.public_ip}"
+  value       = "ssh -i ~/.ssh/inkwell-tf-key ec2-user@${aws_eip.this.public_ip}"
 }
 
 output "app_url" {
-  description = "Where your app will be reachable once running"
-  value       = "http://${aws_instance.this.public_ip}:8000"
+  description = "Where your app's backend is reachable"
+  value       = "http://${aws_eip.this.public_ip}:8000"
 }
 
 output "ecr_repository_url" {
