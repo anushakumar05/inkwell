@@ -6,3 +6,4 @@ firebase-service-account.json
 eval_results/
 .pytest_cache
 tests/
+test_*.py

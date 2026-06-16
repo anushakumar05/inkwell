@@ -157,71 +157,66 @@ export default function ChatPanel({ messages, setMessages, onCitationClick }) {
    This way markdown is parsed across the WHOLE message (so ** pairs
    stay balanced), and citations still become clickable buttons.
    ------------------------------------------------------------------ */
-function RenderedMessage({ text, citations, onCitationClick, isUser }) {
-  // User messages are plain text — no markdown, no citations needed.
-  if (isUser) {
-    return <span className="whitespace-pre-wrap text-paper-100">{text}</span>;
-  }
-
-  const proseClasses = "prose prose-sm max-w-none text-ink-900 prose-p:my-1.5 prose-strong:text-forest prose-strong:font-semibold prose-em:text-ink-900";
-
-  if (!citations || citations.length === 0) {
+   function RenderedMessage({ text, citations, onCitationClick, isUser }) {
+    // User messages are plain text — no markdown, no citations needed.
+    if (isUser) {
+      return <span className="whitespace-pre-wrap text-paper-100">{text}</span>;
+    }
+  
+    const proseClasses = "prose prose-sm max-w-none text-ink-900 prose-p:my-1.5 prose-strong:text-forest prose-strong:font-semibold prose-em:text-ink-900";
+  
+    // Always transform [E1], [E2, E3] markers into markdown links with cite:// scheme.
+    // Even if citations aren't available yet (e.g. streaming hasn't completed),
+    // the transform is safe — the link override will gracefully fall back to plain text.
+    const linked = text.replace(
+      /\[(E\d+(?:,\s*E\d+)*)\]/g,
+      (_match, ids) => `[${ids}](cite://${ids.replace(/\s+/g, "")})`
+    );
+  
+    // Build a lookup map. May be empty if citations haven't arrived yet.
+    const byId = citations
+      ? Object.fromEntries(citations.map((c) => [c.id, c]))
+      : {};
+  
     return (
       <div className={proseClasses}>
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            a({ href, children }) {
+              // Citation link — render as clickable badge(s).
+              if (typeof href === "string" && href.startsWith("cite://")) {
+                const ids = href.slice(7).split(",");
+                return (
+                  <span>
+                    {ids.map((id, j) => {
+                      const cite = byId[id];
+                      return (
+                        <button
+                          key={j}
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            if (cite) onCitationClick?.(cite.entry_id);
+                          }}
+                          disabled={!cite}
+                          className="inline-flex items-center px-1.5 py-0.5 mx-0.5 bg-sage-100 hover:bg-forest hover:text-paper-100 text-forest text-xs rounded font-medium transition-colors disabled:opacity-60 disabled:cursor-default"
+                          title={cite ? `Jump to entry from ${cite.created_at.slice(0, 10)}` : "Citation loading..."}
+                        >
+                          {id}
+                        </button>
+                      );
+                    })}
+                  </span>
+                );
+              }
+              // Other links — render normally.
+              return <a href={href} target="_blank" rel="noreferrer">{children}</a>;
+            },
+          }}
+        >
+          {linked}
+        </ReactMarkdown>
       </div>
     );
   }
-
-  // Map citation IDs to entry metadata for the click handler.
-  const byId = Object.fromEntries(citations.map((c) => [c.id, c]));
-
-  // Strategy: leave the citations inline in the markdown source as a custom
-  // inline pattern that survives parsing — we'll use a placeholder format like
-  // <CITE:E1> that markdown treats as raw HTML-ish, and intercept it via the
-  // `code` / inline replacement. Simpler: use markdown links to a fake scheme,
-  // then catch them with the `a` component override.
-  // Example: [E1] → [E1](cite://E1)
-  const linked = text.replace(
-    /\[(E\d+(?:,\s*E\d+)*)\]/g,
-    (_match, ids) => `[${ids}](cite://${ids.replace(/\s+/g, "")})`
-  );
-
-  return (
-    <div className={proseClasses}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          // Intercept our cite:// links and render them as citation buttons.
-          a({ href, children }) {
-            if (typeof href === "string" && href.startsWith("cite://")) {
-              const ids = href.slice(7).split(",");
-              return (
-                <span>
-                  {ids.map((id, j) => {
-                    const cite = byId[id];
-                    if (!cite) return <span key={j}>[{id}]</span>;
-                    return (
-                      <button
-                        key={j}
-                        onClick={() => onCitationClick?.(cite.entry_id)}
-                        className="inline-flex items-center px-1.5 py-0.5 mx-0.5 bg-sage-100 hover:bg-forest hover:text-paper-100 text-forest text-xs rounded font-medium transition-colors"
-                        title={`Jump to entry from ${cite.created_at.slice(0, 10)}`}
-                      >
-                        {id}
-                      </button>
-                    );
-                  })}
-                </span>
-              );
-            }
-            // Regular link — render as a plain anchor.
-            return <a href={href} target="_blank" rel="noreferrer">{children}</a>;
-          },
-        }}
-      >
-        {linked}
-      </ReactMarkdown>
-    </div>
-  );
-}

@@ -140,12 +140,30 @@ function JournalScreen({ user }) {
   }
 
   async function handleCitationClick(entryId) {
-    const { data } = await api.get(`/entries/${entryId}`);
-    setSelectedId(entryId);
-    setContent(data.content);
-    setChatOpen(false);
-    setTab("write");
-    setTimeout(() => editorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+    console.log("🔗 [1] Citation clicked, entryId:", entryId);
+    try {
+      setChatOpen(false);
+      setTab("write");
+      console.log("🔗 [2] Tab switched, fetching entry...");
+  
+      const { data } = await api.get(`/entries/${entryId}`);
+      console.log("🔗 [3] Got entry data:", { id: data.id, contentLength: data.content?.length });
+  
+      setTimeout(() => {
+        console.log("🔗 [4] Setting selectedId + content");
+        setSelectedId(entryId);
+        setContent(data.content);
+      }, 50);
+  
+      setTimeout(() => {
+        console.log("🔗 [5] Scrolling. editorRef.current exists?", !!editorRef.current);
+        if (editorRef.current) {
+          editorRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }, 150);
+    } catch (err) {
+      console.error("🔗 ERROR:", err);
+    }
   }
 
   const showingSearch = searchResults !== null;
