@@ -32,7 +32,12 @@ def to_point_id(entry_id: str) -> str:
     return str(uuid.uuid5(_QDRANT_NAMESPACE, entry_id))
 
 openai = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
-qdrant = AsyncQdrantClient(url=os.environ.get("QDRANT_URL", "http://localhost:6333"))
+#qdrant = AsyncQdrantClient(url=os.environ.get("QDRANT_URL", "http://localhost:6333"))
+
+qdrant = AsyncQdrantClient(
+    url=os.environ["QDRANT_URL"],
+    api_key=os.environ.get("QDRANT_API_KEY"),  # None locally, real value in prod
+)
 
 
 async def ensure_collection():
