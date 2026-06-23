@@ -40,3 +40,58 @@ Every chat response is auto-scored asynchronously via a detached `asyncio.create
 LLM-as-judge correlates with human judgment but is imperfect. Calibrating against a small human-labeled set would be the next step a production team would take.
 
 ## Architecture
+┌─────────────┐    ┌──────────────┐    ┌──────────────┐
+│   React     │───▶│   FastAPI    │───▶│  MongoDB     │
+│  (Vercel)   │    │  (Render)    │    │  Atlas       │
+└─────────────┘    └──────┬───────┘    └──────────────┘
+                          │
+              ┌───────────┼───────────────┐
+              ▼           ▼               ▼
+        ┌──────────┐ ┌──────────┐  ┌──────────────┐
+        │  OpenAI  │ │  Qdrant  │  │  Anthropic   │
+        │ (embed + │ │ (Cloud)  │  │  (chat +     │
+        │   mood)  │ │          │  │   judge)     │
+        └──────────┘ └──────────┘  └──────────────┘
+
+The repo also contains complete **Terraform code** under `infra/` for an alternative AWS deployment — VPC, security groups, IAM roles, EC2 with Docker, ECR for image storage, Elastic IP for stable addressing. The Render deployment is the active production target; the AWS infrastructure exists as a parallel path and is the artifact for DevOps review.
+
+## Stack
+
+**Backend:** FastAPI · Beanie (MongoDB ODM) · Qdrant client · OpenAI SDK · Anthropic SDK · Firebase Admin · pytest
+
+**Frontend:** React · Vite · Tailwind CSS · Recharts · `@uiw/react-md-editor` · `react-markdown` · Firebase Auth
+
+**Infra:** Vercel (frontend) · Render (backend) · MongoDB Atlas · Qdrant Cloud · plus Terraform-managed AWS (EC2 + ECR) as a secondary deployment path in `infra/`
+
+**Eval:** Custom LLM-as-judge pipeline using Claude Sonnet via Anthropic tool-use API for structured scores
+
+## Running locally
+
+```bash
+# Clone
+git clone https://github.com/<<<yourusername>>>/inkwell.git
+cd inkwell
+
+# Start local databases
+docker run -d --name inkwell-mongo -p 27017:27017 mongo:7
+docker run -d --name inkwell-qdrant -p 6333:6333 \
+  -v ~/qdrant_storage:/qdrant/storage qdrant/qdrant
+
+# Backend
+cd backend
+cp .env.example .env  # fill in OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --reload
+
+# Frontend (new terminal)
+cd frontend
+cp .env.example .env.local  # fill in Firebase config + VITE_API_URL=http://127.0.0.1:8000
+npm install
+npm run dev
+
+# Run the offline eval suite (optional)
+cd backend
+export EVAL_USER_ID=your-firebase-uid
+python -m scripts.run_eval_suite
+```
