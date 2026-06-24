@@ -15,7 +15,7 @@ A journaling app with semantic memory. Write entries in plain text, then search 
 - **Frequency heatmap.** GitHub-style calendar showing when entries get written to encourage daily/regular journaling.
 - **Faithfulness evaluation.** Every RAG response is auto-scored by an LLM judge on faithfulness, answer relevance, and context relevance. There is also a 25-question offline test suite that prevents the chat pipeline from regressing.
 
-## What makes Inkwell Special
+## What makes Inkwell special
 
 ### 1. Reduces Chances of LLM Hallucinations
 
