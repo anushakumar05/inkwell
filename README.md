@@ -40,6 +40,7 @@ Every chat response is auto-scored asynchronously via a detached `asyncio.create
 LLM-as-judge correlates with human judgment but is imperfect. Calibrating against a small human-labeled set would be the next step a production team would take.
 
 ## Architecture
+```
 ┌─────────────┐    ┌──────────────┐    ┌──────────────┐
 │   React     │───▶│   FastAPI    │───▶│  MongoDB     │
 │  (Vercel)   │    │  (Render)    │    │  Atlas       │
@@ -52,7 +53,7 @@ LLM-as-judge correlates with human judgment but is imperfect. Calibrating agains
         │ (embed + │ │ (Cloud)  │  │  (chat +     │
         │   mood)  │ │          │  │   judge)     │
         └──────────┘ └──────────┘  └──────────────┘
-
+```
 The repo also contains complete **Terraform code** under `infra/` for an alternative AWS deployment — VPC, security groups, IAM roles, EC2 with Docker, ECR for image storage, Elastic IP for stable addressing. The Render deployment is the active production target; the AWS infrastructure exists as a parallel path and is the artifact for DevOps review.
 
 ## Stack
