@@ -2,7 +2,7 @@
 
 A journaling app with semantic memory. Write entries in plain text, then search them by *feeling*, ask questions answered from your own past words, and watch your emotional patterns surface over time.
 
-**[Live demo](https://inkwell-ak.vercel.app)** · **[Demo video (90s)](link)**
+**[Link](https://inkwell-ak.vercel.app)** · **[Demo video](link soon)**
 
 ---
 
