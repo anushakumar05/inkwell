@@ -17,7 +17,7 @@ A journaling app with semantic memory. Write entries in plain text, then search 
 
 ## What makes Inkwell special
 
-### 1. Reduces Chances of LLM Hallucinations
+### 1. Reduces chances of LLM hallucinations
 
 When retrieval returns weak matches or comes up empty, the system says "I don't see any entries about that" instead of fabricating. The eval framework caught this — test cases designed to expect refusal had brutal faithfulness scores until the prompt was tightened.
 
