@@ -1,6 +1,6 @@
 # Inkwell
 
-A journaling app with semantic memory. You can write entries, filter your entries by feeling, interact with a chatbot that is grounded from your own words, and visualize your emotional patterns over time.
+A journaling app with semantic memory. You can write entries, search your entries by feeling, interact with a chatbot that only speaks from what you've actually written, and visualize your emotional patterns over time.
 
 **[Link](https://inkwell-ak.vercel.app)** · **[Demo video](link soon)**
 
